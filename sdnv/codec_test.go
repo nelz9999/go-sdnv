@@ -20,7 +20,58 @@
 
 package sdnv
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
+
+var tests = []struct {
+	num  uint64
+	data []byte
+}{
+	{ // via RFC 5050 4.1
+		uint64(0xabc),
+		[]byte{0x95, 0x3c},
+	},
+	{ // via RFC 5050 4.1
+		uint64(0x1234),
+		[]byte{0xa4, 0x34},
+	},
+	{ // via RFC 5050 4.1
+		uint64(0x4234),
+		[]byte{0x81, 0x84, 0x34},
+	},
+	{ // via RFC 5050 4.1
+		uint64(0x7f),
+		[]byte{0x7f},
+	},
+	{ // Lower bound
+		uint64(0x00),
+		[]byte{0x00},
+	},
+	{ // Upper bound
+		uint64(0xffffffffffffffff),
+		[]byte{
+			0x81,
+			0xff, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0xff, 0xff,
+			0x7f,
+		},
+	},
+}
+
+func TestPut(t *testing.T) {
+	buf := make([]byte, 10)
+	for _, test := range tests {
+		size := Put(buf, test.num)
+		if size != len(test.data) {
+			t.Errorf("expected %d: %d\n", len(test.data), size)
+		}
+		if !bytes.Equal(test.data, buf[:size]) {
+			t.Errorf("expected %b: %b\n", test.data, buf[:size])
+		}
+	}
+}
 
 func TestGet(t *testing.T) {
 	buf := make([]byte, 10)
@@ -35,5 +86,4 @@ func TestGet(t *testing.T) {
 			t.Errorf("expected %d: %d\n", test.num, r)
 		}
 	}
-
 }

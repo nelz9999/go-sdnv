@@ -18,11 +18,39 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+// Package sdnv packages implements the Self-Delimiting Numeric Values,
+// as per https://tools.ietf.org/html/rfc5050#section-4.1
 package sdnv
 
-// Get will decode a uint64 Self-Delimiting Numeric Value from the buffer
-// and return the uint64 and the number of bytes consumed from the buffer.
+import (
+	"math/bits"
+)
+
+// Put will encode the given uint64 into the buffer, and return the number of
+// bytes used in the buffer.
 // Put panics if there is not enough space in the buffer.
+// Design can be found at: https://tools.ietf.org/html/rfc5050#section-4.1
+func Put(buf []byte, x uint64) (n int) {
+	if x == 0 {
+		buf[n] = 0x00
+		return n + 1
+	}
+
+	n = (bits.Len64(x) - 1) / 7
+	for i := n; i >= 0; i-- {
+		buf[i] = byte(x) & 0x7f
+		if i != n {
+			buf[i] |= 0x80
+		}
+		x >>= 7
+	}
+	return n + 1
+}
+
+// Get will decode a uint64 value from the buffer, returning the uint64 and
+// the number of bytes consumed from the buffer.
+// Get panics if it runs out of bytes in the buffer before encountering
+// the delimiter byte.
 // Design can be found at: https://tools.ietf.org/html/rfc5050#section-4.1
 func Get(buf []byte) (x uint64, n int) {
 	for {
