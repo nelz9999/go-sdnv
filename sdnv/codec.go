@@ -23,9 +23,13 @@
 package sdnv
 
 import (
+	"io"
 	"math/big"
 	"math/bits"
 )
+
+// MaxByteSize is the largest number of bytes a uint64 might be encoded into
+const MaxByteSize = 10
 
 // Encode puts the given uint64 into the buffer, and return the number of
 // bytes used in the buffer.
@@ -68,6 +72,24 @@ func encodeBig(buf []byte, in *big.Int) (n int) {
 	return n + 1
 }
 
+func Write(d io.ByteWriter, x uint64) (n int) {
+	if x == 0 {
+		d.WriteByte(0x00)
+		return n + 1
+	}
+
+	n = (bits.Len64(x) - 1) / 7
+	for i := n; i >= 0; i-- {
+		offset := uint(i * 7)
+		b := byte(x>>offset) & 0x7f
+		if i != 0 {
+			b |= 0x80
+		}
+		d.WriteByte(b)
+	}
+	return n + 1
+}
+
 // Decode retrieves a uint64 value from the buffer, returning the uint64 and
 // the number of bytes consumed from the buffer.
 // Get panics if it runs out of bytes in the buffer before encountering
@@ -93,6 +115,21 @@ func decodeBig(buf []byte) (x *big.Int, n int) {
 			return x, n + 1
 		}
 		x.Lsh(x, 7)
+		n++
+	}
+}
+
+func Read(d io.ByteReader) (x uint64, n int) {
+	for {
+		b, err := d.ReadByte()
+		if err != nil {
+			panic(err)
+		}
+		x |= uint64(b & 0x7f)
+		if b < 0x80 {
+			return x, n + 1
+		}
+		x <<= 7
 		n++
 	}
 }

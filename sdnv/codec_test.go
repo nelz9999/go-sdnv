@@ -64,7 +64,7 @@ var tests = []struct {
 }
 
 func TestEncodes(t *testing.T) {
-	buf := make([]byte, 10)
+	buf := make([]byte, MaxByteSize)
 	for _, test := range tests {
 		// Uint64 version
 		size := Encode(buf, test.num)
@@ -87,30 +87,50 @@ func TestEncodes(t *testing.T) {
 		if x.Uint64() != test.num {
 			t.Errorf("modified %d: %d\n", test.num, x.Uint64())
 		}
+
+		// Uint64 Writer version
+		bb := bytes.NewBufferString("")
+		wSize := Write(bb, test.num)
+		if size != len(test.data) {
+			t.Errorf("expected %d: %d\n", len(test.data), wSize)
+		}
+		if !bytes.Equal(test.data, bb.Bytes()) {
+			t.Errorf("expected %b: %b\n", test.data, bb.Bytes())
+		}
 	}
 }
 
 func TestDecodes(t *testing.T) {
-	buf := make([]byte, 10)
+	buf := make([]byte, MaxByteSize)
 	for _, test := range tests {
 		size := Encode(buf, test.num)
 
 		// Uint64 version
-		r, n := Decode(buf[:size])
-		if size != n {
-			t.Errorf("expected %d: %d\n", size, n)
+		r1, n1 := Decode(buf[:size])
+		if size != n1 {
+			t.Errorf("expected %d: %d\n", size, n1)
 		}
-		if test.num != r {
-			t.Errorf("expected %d: %d\n", test.num, r)
+		if test.num != r1 {
+			t.Errorf("expected %d: %d\n", test.num, r1)
 		}
 
 		// big.Int version
-		x, l := decodeBig(buf[:size])
-		if size != l {
-			t.Errorf("expected %d: %d\n", size, l)
+		x, n2 := decodeBig(buf[:size])
+		if size != n2 {
+			t.Errorf("expected %d: %d\n", size, n2)
 		}
 		if test.num != x.Uint64() {
 			t.Errorf("expected %d: %d\n", test.num, x.Uint64())
+		}
+
+		// Uint64 reader version
+		bb := bytes.NewBuffer(buf)
+		r3, n3 := Read(bb)
+		if size != n3 {
+			t.Errorf("expected %d: %d\n", size, n3)
+		}
+		if test.num != r3 {
+			t.Errorf("expected %d: %d\n", test.num, r3)
 		}
 	}
 }
@@ -150,3 +170,5 @@ func TestBigInts(t *testing.T) {
 		t.Errorf("expected %s: %s\n", xVal, val)
 	}
 }
+
+// TODO: TestPanics
