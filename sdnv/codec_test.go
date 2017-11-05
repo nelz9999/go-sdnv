@@ -90,7 +90,10 @@ func TestEncodes(t *testing.T) {
 
 		// Uint64 Writer version
 		bb := bytes.NewBufferString("")
-		wSize := Write(bb, test.num)
+		wSize, err := Write(bb, test.num)
+		if err != nil {
+			t.Errorf("unexpected: %v\n", err)
+		}
 		if size != len(test.data) {
 			t.Errorf("expected %d: %d\n", len(test.data), wSize)
 		}
@@ -125,7 +128,11 @@ func TestDecodes(t *testing.T) {
 
 		// Uint64 reader version
 		bb := bytes.NewBuffer(buf)
-		r3, n3 := Read(bb)
+		r3 := uint64(0)
+		n3, err := Read(bb, &r3)
+		if err != nil {
+			t.Errorf("unexpected: %v\n", err)
+		}
 		if size != n3 {
 			t.Errorf("expected %d: %d\n", size, n3)
 		}

@@ -72,10 +72,9 @@ func encodeBig(buf []byte, in *big.Int) (n int) {
 	return n + 1
 }
 
-func Write(d io.ByteWriter, x uint64) (n int) {
+func WriteBytes(bw io.ByteWriter, x uint64) (n int, err error) {
 	if x == 0 {
-		d.WriteByte(0x00)
-		return n + 1
+		return 1, bw.WriteByte(0x00)
 	}
 
 	n = (bits.Len64(x) - 1) / 7
@@ -85,9 +84,19 @@ func Write(d io.ByteWriter, x uint64) (n int) {
 		if i != 0 {
 			b |= 0x80
 		}
-		d.WriteByte(b)
+		bw.WriteByte(b)
 	}
-	return n + 1
+	return n + 1, nil
+}
+
+func Write(w io.Writer, x uint64) (n int, err error) {
+	if x == 0 {
+		return w.Write([]byte{0x00})
+	}
+
+	buf := make([]byte, MaxByteSize)
+	size := Encode(buf, x)
+	return w.Write(buf[:size])
 }
 
 // Decode retrieves a uint64 value from the buffer, returning the uint64 and
@@ -119,17 +128,33 @@ func decodeBig(buf []byte) (x *big.Int, n int) {
 	}
 }
 
-func Read(d io.ByteReader) (x uint64, n int) {
+func ReadBytes(br io.ByteReader, data *uint64) (n int, err error) {
 	for {
-		b, err := d.ReadByte()
+		b, err := br.ReadByte()
 		if err != nil {
-			panic(err)
+			return n, err
 		}
-		x |= uint64(b & 0x7f)
+		*data |= uint64(b & 0x7f)
 		if b < 0x80 {
-			return x, n + 1
+			return n + 1, nil
 		}
-		x <<= 7
+		*data <<= 7
 		n++
+	}
+}
+
+func Read(r io.Reader, data *uint64) (n int, err error) {
+	buf := make([]byte, 1)
+	for {
+		l, err := r.Read(buf)
+		n += l
+		if err != nil {
+			return n, err
+		}
+		*data |= uint64(buf[0] & 0x7f)
+		if buf[0] < 0x80 {
+			return n, nil
+		}
+		*data <<= 7
 	}
 }
