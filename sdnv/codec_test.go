@@ -22,8 +22,11 @@ package sdnv
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"math/big"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 )
@@ -126,7 +129,7 @@ func TestDecodes(t *testing.T) {
 			t.Errorf("expected %d: %d\n", test.num, x.Uint64())
 		}
 
-		// Uint64 reader version
+		// Uint64 Reader version
 		bb := bytes.NewBuffer(buf)
 		r3 := uint64(0)
 		n3, err := Read(bb, &r3)
@@ -138,6 +141,20 @@ func TestDecodes(t *testing.T) {
 		}
 		if test.num != r3 {
 			t.Errorf("expected %d: %d\n", test.num, r3)
+		}
+
+		// Uint64 ByteReader version
+		br := bytes.NewBuffer(buf)
+		r4 := uint64(0)
+		n4, err := ReadBytes(br, &r4)
+		if err != nil {
+			t.Errorf("unexpected: %v\n", err)
+		}
+		if size != n4 {
+			t.Errorf("expected %d: %d\n", size, n4)
+		}
+		if test.num != r4 {
+			t.Errorf("expected %d: %d\n", test.num, r4)
 		}
 	}
 }
@@ -175,6 +192,81 @@ func TestBigInts(t *testing.T) {
 	}
 	if xVal.Cmp(val) != 0 {
 		t.Errorf("expected %s: %s\n", xVal, val)
+	}
+}
+
+func TestDecodeErrors(t *testing.T) {
+	var testCases = []struct {
+		name string
+		data []byte
+		size int
+		err  string
+	}{
+		{
+			"zero length",
+			[]byte{},
+			0,
+			io.EOF.Error(),
+		},
+		{
+			"non-zero underflow",
+			[]byte{0xff, 0xff},
+			2,
+			io.ErrUnexpectedEOF.Error(),
+		},
+		{
+			"greater than 64 bit integer",
+			[]byte{
+				0xff, 0xff, 0xff, 0xff,
+				0xff, 0xff, 0xff, 0xff,
+				0xff, 0xff, 0xff, 0xff,
+			},
+			10,
+			ErrOverflow64,
+		},
+		{
+			"one too many most significant bits",
+			[]byte{
+				0x83,
+				0xff, 0xff, 0xff, 0xff,
+				0xff, 0xff, 0xff, 0xff,
+				0x7f,
+			},
+			10,
+			ErrOverflow64,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(
+			fmt.Sprintf("%s io.Reader", tc.name),
+			func(t *testing.T) {
+				bb := bytes.NewBuffer(tc.data)
+				val := uint64(0)
+				n, err := Read(bb, &val)
+				if tc.size != n {
+					t.Errorf("expected %d: %d\n", tc.size, n)
+				}
+				if err == nil || !strings.Contains(err.Error(), tc.err) {
+					t.Errorf("expected [%s]: %v\n", tc.err, err)
+				}
+			},
+		)
+
+		t.Run(
+			fmt.Sprintf("%s io.ByteReader", tc.name),
+			func(t *testing.T) {
+				bb := bytes.NewBuffer(tc.data)
+				val := uint64(0)
+				n, err := ReadBytes(bb, &val)
+				if tc.size != n {
+					t.Errorf("expected %d: %d\n", tc.size, n)
+				}
+				if err == nil || !strings.Contains(err.Error(), tc.err) {
+					t.Errorf("expected [%s]: %v\n", tc.err, err)
+				}
+			},
+		)
 	}
 }
 

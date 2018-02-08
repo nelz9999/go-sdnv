@@ -23,6 +23,7 @@
 package sdnv
 
 import (
+	"fmt"
 	"io"
 	"math/big"
 	"math/bits"
@@ -30,6 +31,10 @@ import (
 
 // MaxByteSize is the largest number of bytes a uint64 might be encoded into
 const MaxByteSize = 10
+
+// ErrOverflow64 is the string sentinel value returned when overflowing
+// a 64-bit integer
+const ErrOverflow64 = "sdnv: byte sequence overflows a 64-bit integer"
 
 // Encode puts the given uint64 into the buffer, and return the number of
 // bytes used in the buffer.
@@ -105,6 +110,7 @@ func Write(w io.Writer, x uint64) (n int, err error) {
 // the delimiter byte.
 // Design can be found at: https://tools.ietf.org/html/rfc5050#section-4.1
 func Decode(buf []byte) (x uint64, n int) {
+	// TODO: Overflow like binary.Uvarint?!?
 	for {
 		x |= uint64(buf[n] & 0x7f)
 		if buf[n] < 0x80 {
@@ -128,11 +134,36 @@ func decodeBig(buf []byte) (x *big.Int, n int) {
 	}
 }
 
+// ReadBytes will read individual bytes on-demand as needed to fill data.
+// The io.EOF error will only be returned if zero bytes have been read. If
+// any have been read but an io.EOF is encountered, io.ErrUnexpectedEOF is
+// returned instead.
+// If the bytes indicate a number greater than can be held by a 64-bit
+// integer, the number of bytes read will be returned along with an error
+// containing the string value of ErrOverflow64.
 func ReadBytes(br io.ByteReader, data *uint64) (n int, err error) {
+	var b0 byte // For overflow check
 	for {
 		b, err := br.ReadByte()
+		if err == io.EOF && n > 0 {
+			return n, io.ErrUnexpectedEOF
+		}
 		if err != nil {
 			return n, err
+		}
+		if n == MaxByteSize-1 {
+			// We're on the last possible byte, but it says to pull more
+			if b >= 0x80 {
+				return MaxByteSize, fmt.Errorf(ErrOverflow64)
+			}
+			// For a 10-byte the only acceptable value for the first
+			// byte is 0x81. See the Note in RFC 5050 4.1
+			if b0 != 0x81 {
+				return MaxByteSize, fmt.Errorf(ErrOverflow64)
+			}
+		}
+		if n == 0 {
+			b0 = b
 		}
 		*data |= uint64(b & 0x7f)
 		if b < 0x80 {
@@ -143,13 +174,38 @@ func ReadBytes(br io.ByteReader, data *uint64) (n int, err error) {
 	}
 }
 
+// Read will read individual bytes on-demand as needed to fill data.
+// The io.EOF error will only be returned if zero bytes have been read. If
+// any have been read but an io.EOF is encountered, io.ErrUnexpectedEOF is
+// returned instead.
+// If the bytes indicate a number greater than can be held by a 64-bit
+// integer, the number of bytes read will be returned along with an error
+// containing the string value of ErrOverflow64.
 func Read(r io.Reader, data *uint64) (n int, err error) {
+	var b0 byte // For overflow check
 	buf := make([]byte, 1)
 	for {
 		l, err := r.Read(buf)
 		n += l
+		if err == io.EOF && n > 0 {
+			return n, io.ErrUnexpectedEOF
+		}
 		if err != nil {
 			return n, err
+		}
+		if n == MaxByteSize {
+			// We're on the last possible byte, but it says to pull more
+			if buf[0] >= 0x80 {
+				return MaxByteSize, fmt.Errorf(ErrOverflow64)
+			}
+			// For a 10-byte the only acceptable value for the first
+			// byte is 0x81. See the Note in RFC 5050 4.1
+			if b0 != 0x81 {
+				return MaxByteSize, fmt.Errorf(ErrOverflow64)
+			}
+		}
+		if n == 1 {
+			b0 = buf[0]
 		}
 		*data |= uint64(buf[0] & 0x7f)
 		if buf[0] < 0x80 {
